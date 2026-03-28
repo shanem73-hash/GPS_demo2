@@ -177,18 +177,16 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_da
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = true;
 
-  // Guaranteed Earth body (works even if globe imagery providers fail)
-  const earthMaterial = earthDataUrl
-    ? new Cesium.ImageMaterialProperty({{ image: earthDataUrl }})
-    : Cesium.Color.STEELBLUE.withAlpha(0.9);
-
+  // Guaranteed Earth body (independent of globe imagery providers)
   viewer.entities.add({{
     name: 'EarthBody',
     position: Cesium.Cartesian3.ZERO,
     ellipsoid: {{
       radii: new Cesium.Cartesian3(6378137.0, 6378137.0, 6356752.3),
-      material: earthMaterial,
-      outline: false
+      material: Cesium.Color.CORNFLOWERBLUE.withAlpha(1.0),
+      outline: true,
+      outlineColor: Cesium.Color.WHITE.withAlpha(0.35),
+      outlineWidth: 1
     }}
   }});
 
@@ -216,7 +214,10 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_da
   }}
 
   viewer.clock.currentTime = Cesium.JulianDate.now();
-  viewer.scene.camera.flyHome(0);
+  // Force camera toward Earth center so the globe is always in view.
+  viewer.camera.setView({
+    destination: new Cesium.Cartesian3(2.1e7, 2.1e7, 1.4e7)
+  });
 
   // Smooth update every 30s (no full redraw)
   let idx = 0;
