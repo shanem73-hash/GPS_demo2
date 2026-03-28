@@ -1,0 +1,4 @@
+streamlit>=1.33
+numpy>=1.26
+requests>=2.31
+skyfield>=1.49
