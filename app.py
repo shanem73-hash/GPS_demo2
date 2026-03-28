@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import base64
+from pathlib import Path
 
 import numpy as np
 import requests
@@ -11,6 +13,7 @@ from skyfield.api import EarthSatellite, load
 
 GPS_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle"
 BEIDOU_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=beidou&FORMAT=tle"
+EARTH_TEXTURE_PATH = Path(__file__).parent / "assets" / "earth_beauty.jpg"
 
 
 @st.cache_data(ttl=300)
@@ -84,7 +87,15 @@ def build_payload(show_gps: bool, show_beidou: bool, max_trails: int, orbit_poin
     }
 
 
-def cesium_html(payload: dict, use_world_terrain: bool, height_px: int):
+def _earth_texture_data_url() -> str | None:
+    if not EARTH_TEXTURE_PATH.exists():
+        return None
+    raw = EARTH_TEXTURE_PATH.read_bytes()
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
+
+
+def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_data_url: str | None):
     data = json.dumps(payload)
     terrain_js = "Cesium.createWorldTerrainAsync()" if use_world_terrain else "new Cesium.EllipsoidTerrainProvider()"
 
@@ -104,6 +115,7 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int):
 <script>
 (async function() {{
   const payload = {data};
+  const earthDataUrl = {json.dumps(earth_data_url)};
 
   let terrainProvider;
   try {{
@@ -127,14 +139,29 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int):
 
   // Ensure at least one imagery layer is present so Earth is visible.
   let imagerySet = false;
-  try {{
-    const arcgis = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
-    );
-    viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(arcgis);
-    imagerySet = true;
-  }} catch(e) {{}}
+
+  if (earthDataUrl) {{
+    try {{
+      const single = new Cesium.SingleTileImageryProvider({{
+        url: earthDataUrl,
+        rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90)
+      }});
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(single);
+      imagerySet = true;
+    }} catch(e) {{}}
+  }}
+
+  if (!imagerySet) {{
+    try {{
+      const arcgis = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+        'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
+      );
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(arcgis);
+      imagerySet = true;
+    }} catch(e) {{}}
+  }}
 
   if (!imagerySet) {{
     try {{
@@ -210,7 +237,8 @@ def main():
     payload = build_payload(show_gps, show_beidou, max_trails, orbit_points)
     st.caption(f"UTC data epoch: {payload['timestamp']} | Satellites: {len(payload['satellites'])}")
 
-    html = cesium_html(payload, use_world_terrain=use_world_terrain, height_px=height_px)
+    earth_data_url = _earth_texture_data_url()
+    html = cesium_html(payload, use_world_terrain=use_world_terrain, height_px=height_px, earth_data_url=earth_data_url)
     components.html(html, height=height_px + 8)
 
 
