@@ -215,9 +215,9 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_da
 
   viewer.clock.currentTime = Cesium.JulianDate.now();
   // Force camera toward Earth center so the globe is always in view.
-  viewer.camera.setView({
+  viewer.camera.setView({{
     destination: new Cesium.Cartesian3(2.1e7, 2.1e7, 1.4e7)
-  });
+  }});
 
   // Smooth update every 30s (no full redraw)
   let idx = 0;
