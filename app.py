@@ -105,9 +105,16 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int):
 (async function() {{
   const payload = {data};
 
+  let terrainProvider;
+  try {{
+    terrainProvider = await {terrain_js};
+  }} catch (e) {{
+    terrainProvider = new Cesium.EllipsoidTerrainProvider();
+  }}
+
   const viewer = new Cesium.Viewer('cesiumContainer', {{
     shouldAnimate: true,
-    baseLayerPicker: true,
+    baseLayerPicker: false,
     timeline: false,
     animation: false,
     geocoder: false,
@@ -115,18 +122,30 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int):
     sceneModePicker: true,
     navigationHelpButton: true,
     infoBox: true,
-    terrainProvider: await {terrain_js}
+    terrainProvider: terrainProvider
   }});
 
-  // richer imagery option
+  // Ensure at least one imagery layer is present so Earth is visible.
+  let imagerySet = false;
   try {{
     const arcgis = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
       'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
     );
     viewer.imageryLayers.removeAll();
     viewer.imageryLayers.addImageryProvider(arcgis);
+    imagerySet = true;
   }} catch(e) {{}}
 
+  if (!imagerySet) {{
+    try {{
+      const osm = new Cesium.OpenStreetMapImageryProvider({{ url: 'https://tile.openstreetmap.org/' }});
+      viewer.imageryLayers.removeAll();
+      viewer.imageryLayers.addImageryProvider(osm);
+      imagerySet = true;
+    }} catch(e) {{}}
+  }}
+
+  viewer.scene.globe.baseColor = Cesium.Color.DARKSLATEGRAY;
   viewer.scene.globe.enableLighting = true;
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = true;
