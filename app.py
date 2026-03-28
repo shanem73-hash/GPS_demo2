@@ -179,7 +179,7 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_da
 
   // Guaranteed Earth body (works even if globe imagery providers fail)
   const earthMaterial = earthDataUrl
-    ? new Cesium.ImageMaterialProperty({ image: earthDataUrl })
+    ? new Cesium.ImageMaterialProperty({{ image: earthDataUrl }})
     : Cesium.Color.STEELBLUE.withAlpha(0.9);
 
   viewer.entities.add({
