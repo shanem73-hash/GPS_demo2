@@ -177,6 +177,21 @@ def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_da
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = true;
 
+  // Guaranteed Earth body (works even if globe imagery providers fail)
+  const earthMaterial = earthDataUrl
+    ? new Cesium.ImageMaterialProperty({ image: earthDataUrl })
+    : Cesium.Color.STEELBLUE.withAlpha(0.9);
+
+  viewer.entities.add({
+    name: 'EarthBody',
+    position: Cesium.Cartesian3.ZERO,
+    ellipsoid: {
+      radii: new Cesium.Cartesian3(6378137.0, 6378137.0, 6356752.3),
+      material: earthMaterial,
+      outline: false
+    }
+  });
+
   const satByName = new Map();
   const colorBySys = {{"GPS": Cesium.Color.GOLD, "BeiDou": Cesium.Color.CYAN}};
 
