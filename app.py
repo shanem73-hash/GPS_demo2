@@ -125,11 +125,18 @@ def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | No
   </style>
 </head>
 <body>
+<div id=\"status\" style=\"position:absolute;z-index:20;left:8px;top:8px;color:#fff;font:12px sans-serif;background:rgba(0,0,0,.45);padding:4px 6px;border-radius:4px;\">Loading 3D globe…</div>
 <div id=\"cesiumContainer\"></div>
 <script>
 (async function() {{
   const payload = {data};
   const earthDataUrl = {json.dumps(earth_data_url)};
+  const statusEl = document.getElementById('status');
+
+  if (typeof Cesium === 'undefined') {{
+    if (statusEl) statusEl.textContent = 'Cesium JS failed to load.';
+    throw new Error('Cesium is undefined');
+  }}
 
   let terrainProvider;
   try {{
@@ -151,7 +158,6 @@ def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | No
     terrainProvider: terrainProvider
   }});
 
-  // Ensure at least one imagery layer is present so Earth is visible.
   let imagerySet = false;
 
   if (earthDataUrl) {{
@@ -186,23 +192,13 @@ def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | No
     }} catch(e) {{}}
   }}
 
+  viewer.scene.globe.show = true;
   viewer.scene.globe.baseColor = Cesium.Color.DARKSLATEGRAY;
   viewer.scene.globe.enableLighting = true;
+  viewer.scene.globe.depthTestAgainstTerrain = false;
+  viewer.scene.globe.translucency.enabled = false;
   viewer.scene.skyAtmosphere.show = true;
   viewer.scene.fog.enabled = true;
-
-  // Guaranteed Earth body (independent of globe imagery providers)
-  viewer.entities.add({{
-    name: 'EarthBody',
-    position: Cesium.Cartesian3.ZERO,
-    ellipsoid: {{
-      radii: new Cesium.Cartesian3(6378137.0, 6378137.0, 6356752.3),
-      material: Cesium.Color.CORNFLOWERBLUE.withAlpha(1.0),
-      outline: true,
-      outlineColor: Cesium.Color.WHITE.withAlpha(0.35),
-      outlineWidth: 1
-    }}
-  }});
 
   const satByName = new Map();
   const colorBySys = {{"GPS": Cesium.Color.GOLD, "BeiDou": Cesium.Color.CYAN}};
@@ -228,12 +224,10 @@ def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | No
   }}
 
   viewer.clock.currentTime = Cesium.JulianDate.now();
-  // Force camera toward Earth center so the globe is always in view.
   viewer.camera.setView({{
     destination: new Cesium.Cartesian3(2.1e7, 2.1e7, 1.4e7)
   }});
 
-  // Smooth update every 30s (no full redraw)
   let idx = 0;
   setInterval(() => {{
     idx = (idx + 1) % payload.future.length;
@@ -242,7 +236,13 @@ def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | No
       if (ent) ent.position = new Cesium.Cartesian3(p.x, p.y, p.z);
     }}
   }}, 30000);
-}})();
+
+  if (statusEl) statusEl.style.display = 'none';
+}})().catch((err) => {{
+  console.error('Cesium init failed:', err);
+  const statusEl = document.getElementById('status');
+  if (statusEl) statusEl.textContent = '3D failed to initialize (WebGL/script blocked).';
+}});
 </script>
 </body>
 </html>
