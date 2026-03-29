@@ -18,6 +18,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Quick test
+```bash
+cd ~/.openclaw/workspace-coder/GPS_demo2
+source .venv/bin/activate
+python -m unittest discover -s tests -v
+```
+
 ## Notes
 - Positions and trails are from live TLE + SGP4 propagation.
 - Real-time-ish cadence is 30s update steps.

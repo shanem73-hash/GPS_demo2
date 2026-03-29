@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import base64
 from pathlib import Path
 import logging
+from typing import Iterable
 
 import numpy as np
 import requests
@@ -15,23 +16,17 @@ from skyfield.api import EarthSatellite, load
 GPS_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle"
 BEIDOU_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=beidou&FORMAT=tle"
 EARTH_TEXTURE_PATH = Path(__file__).parent / "assets" / "earth_beauty.jpg"
+FUTURE_STEP_SECONDS = 30
+FUTURE_STEPS = 21
 logger = logging.getLogger(__name__)
 
 
-@st.cache_data(ttl=300)
-def fetch_tles(url: str):
-    try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        logger.warning("Failed to fetch TLEs from %s: %s", url, e)
-        return []
-
-    lines = [ln.strip() for ln in resp.text.splitlines() if ln.strip()]
-    sats = []
+def parse_tle_lines(lines: Iterable[str]) -> list[tuple[str, str, str]]:
+    cleaned = [ln.strip() for ln in lines if ln.strip()]
+    sats: list[tuple[str, str, str]] = []
     i = 0
-    while i + 2 < len(lines):
-        name, l1, l2 = lines[i], lines[i + 1], lines[i + 2]
+    while i + 2 < len(cleaned):
+        name, l1, l2 = cleaned[i], cleaned[i + 1], cleaned[i + 2]
         if l1.startswith("1 ") and l2.startswith("2 "):
             sats.append((name, l1, l2))
             i += 3
@@ -40,7 +35,19 @@ def fetch_tles(url: str):
     return sats
 
 
-def build_payload(show_gps: bool, show_beidou: bool, max_trails: int, orbit_points: int):
+@st.cache_data(ttl=300)
+def fetch_tles(url: str) -> list[tuple[str, str, str]]:
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch TLEs from %s: %s", url, e)
+        return []
+
+    return parse_tle_lines(resp.text.splitlines())
+
+
+def build_payload(show_gps: bool, show_beidou: bool, max_trails: int, orbit_points: int) -> dict:
     ts = load.timescale()
     t0 = ts.now()
 
@@ -78,8 +85,8 @@ def build_payload(show_gps: bool, show_beidou: bool, max_trails: int, orbit_poin
 
     # future positions for smooth client-side updates every 30s
     future = []
-    for k in range(21):
-        t = ts.tt_jd(t0.tt + (k * 30) / 86400.0)
+    for k in range(FUTURE_STEPS):
+        t = ts.tt_jd(t0.tt + (k * FUTURE_STEP_SECONDS) / 86400.0)
         frame = []
         for sys, sat in satellites:
             x, y, z = sat.at(t).position.km
@@ -102,7 +109,7 @@ def _earth_texture_data_url() -> str | None:
     return f"data:image/jpeg;base64,{b64}"
 
 
-def cesium_html(payload: dict, use_world_terrain: bool, height_px: int, earth_data_url: str | None):
+def cesium_html(payload: dict, use_world_terrain: bool, earth_data_url: str | None) -> str:
     data = json.dumps(payload)
     terrain_js = "Cesium.createWorldTerrainAsync()" if use_world_terrain else "new Cesium.EllipsoidTerrainProvider()"
 
@@ -270,7 +277,7 @@ def main():
         st.warning("No satellites loaded. Data source may be temporarily unavailable; try Refresh.")
 
     earth_data_url = _earth_texture_data_url()
-    html = cesium_html(payload, use_world_terrain=use_world_terrain, height_px=height_px, earth_data_url=earth_data_url)
+    html = cesium_html(payload, use_world_terrain=use_world_terrain, earth_data_url=earth_data_url)
     components.html(html, height=height_px + 8)
 
 
