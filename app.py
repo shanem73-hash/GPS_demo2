@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 import base64
 from pathlib import Path
+import logging
 
 import numpy as np
 import requests
@@ -14,12 +15,18 @@ from skyfield.api import EarthSatellite, load
 GPS_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle"
 BEIDOU_TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=beidou&FORMAT=tle"
 EARTH_TEXTURE_PATH = Path(__file__).parent / "assets" / "earth_beauty.jpg"
+logger = logging.getLogger(__name__)
 
 
 @st.cache_data(ttl=300)
 def fetch_tles(url: str):
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch TLEs from %s: %s", url, e)
+        return []
+
     lines = [ln.strip() for ln in resp.text.splitlines() if ln.strip()]
     sats = []
     i = 0
@@ -250,8 +257,17 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-    payload = build_payload(show_gps, show_beidou, max_trails, orbit_points)
-    st.caption(f"UTC data epoch: {payload['timestamp']} | Satellites: {len(payload['satellites'])}")
+    try:
+        payload = build_payload(show_gps, show_beidou, max_trails, orbit_points)
+    except Exception as e:
+        st.error(f"Failed to build satellite view: {e}")
+        st.stop()
+
+    sat_count = len(payload["satellites"])
+    st.caption(f"UTC data epoch: {payload['timestamp']} | Satellites: {sat_count}")
+
+    if sat_count == 0 and (show_gps or show_beidou):
+        st.warning("No satellites loaded. Data source may be temporarily unavailable; try Refresh.")
 
     earth_data_url = _earth_texture_data_url()
     html = cesium_html(payload, use_world_terrain=use_world_terrain, height_px=height_px, earth_data_url=earth_data_url)
