@@ -59,6 +59,18 @@ def _tle_cache_path(url: str) -> Path:
     return TLE_CACHE_DIR / f"{key}.tle"
 
 
+def _fallback_tle_path(url: str) -> Path | None:
+    try:
+        if "GROUP=" in url:
+            group = url.split("GROUP=", 1)[1].split("&", 1)[0].strip().lower()
+            p = FALLBACK_TLE_DIR / f"{group}.txt"
+            if p.exists():
+                return p
+    except Exception:
+        return None
+    return None
+
+
 def _tle_candidate_urls(url: str) -> list[str]:
     # Primary endpoint + text fallback endpoint used by CelesTrak.
     out = [url]
@@ -107,9 +119,22 @@ def fetch_tles(url: str) -> list[tuple[str, str, str]]:
         try:
             cached = cache_path.read_text(encoding="utf-8")
             logger.warning("Using cached TLE data for %s", url)
-            return parse_tle_lines(cached.splitlines())
+            sats = parse_tle_lines(cached.splitlines())
+            if sats:
+                return sats
         except Exception as e:
             logger.warning("Failed to read cached TLEs for %s: %s", url, e)
+
+    fallback = _fallback_tle_path(url)
+    if fallback is not None:
+        try:
+            txt = fallback.read_text(encoding="utf-8")
+            sats = parse_tle_lines(txt.splitlines())
+            if sats:
+                logger.warning("Using bundled fallback TLE data for %s", url)
+                return sats
+        except Exception as e:
+            logger.warning("Failed to read bundled fallback TLEs for %s: %s", url, e)
 
     return []
 
@@ -409,6 +434,7 @@ def _earth_texture_data_url() -> str | None:
 VIEWER_PORT = 8603
 VIEWER_DIR = Path(__file__).parent / ".viewer_site"
 TLE_CACHE_DIR = Path(__file__).parent / ".tle_cache"
+FALLBACK_TLE_DIR = Path(__file__).parent / "fallback_tles"
 DEFAULT_VIEWER_HOST = os.getenv("GPS_VIEWER_HOST", "192.168.50.20")
 
 
