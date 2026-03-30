@@ -59,22 +59,49 @@ def _tle_cache_path(url: str) -> Path:
     return TLE_CACHE_DIR / f"{key}.tle"
 
 
+def _tle_candidate_urls(url: str) -> list[str]:
+    # Primary endpoint + text fallback endpoint used by CelesTrak.
+    out = [url]
+    try:
+        if "GROUP=" in url and "gp.php" in url:
+            group = url.split("GROUP=", 1)[1].split("&", 1)[0].strip().lower()
+            out.append(f"https://celestrak.org/NORAD/elements/{group}.txt")
+    except Exception:
+        pass
+    # de-dup preserve order
+    seen = set()
+    uniq = []
+    for u in out:
+        if u not in seen:
+            seen.add(u)
+            uniq.append(u)
+    return uniq
+
+
 @st.cache_data(ttl=300)
 def fetch_tles(url: str) -> list[tuple[str, str, str]]:
     cache_path = _tle_cache_path(url)
+    headers = {
+        "User-Agent": "GPS_demo2/1.0 (+streamlit-community)",
+        "Accept": "text/plain,text/*;q=0.9,*/*;q=0.8",
+    }
 
-    for attempt in range(3):
-        try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            text = resp.text
-            cache_path.write_text(text, encoding="utf-8")
-            return parse_tle_lines(text.splitlines())
-        except requests.RequestException as e:
-            if attempt < 2:
-                time.sleep(0.8 * (attempt + 1))
-            else:
-                logger.warning("Failed to fetch TLEs from %s after retries: %s", url, e)
+    for candidate in _tle_candidate_urls(url):
+        for attempt in range(3):
+            try:
+                resp = requests.get(candidate, timeout=20, headers=headers)
+                resp.raise_for_status()
+                text = resp.text
+                sats = parse_tle_lines(text.splitlines())
+                if sats:
+                    cache_path.write_text(text, encoding="utf-8")
+                    return sats
+                raise requests.RequestException(f"No valid TLE triplets from {candidate}")
+            except requests.RequestException as e:
+                if attempt < 2:
+                    time.sleep(0.8 * (attempt + 1))
+                else:
+                    logger.warning("Failed to fetch TLEs from %s after retries: %s", candidate, e)
 
     if cache_path.exists():
         try:
