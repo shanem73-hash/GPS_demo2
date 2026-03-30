@@ -1342,27 +1342,20 @@ def _viewer_html() -> str:
 """
 
 
-def _ensure_viewer_server(viewer_host: str) -> str:
-    VIEWER_DIR.mkdir(parents=True, exist_ok=True)
-    # Always refresh served viewer HTML to avoid stale JS after hotfixes.
-    (VIEWER_DIR / "index.html").write_text(_viewer_html(), encoding="utf-8")
-
-    if st.session_state.get("viewer_server_started"):
-        return f"http://{viewer_host}:{VIEWER_PORT}/index.html"
-
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(VIEWER_DIR), **kwargs)
-
-    def _serve() -> None:
-        with socketserver.TCPServer(("0.0.0.0", VIEWER_PORT), Handler) as httpd:
-            httpd.serve_forever()
-
-    th = threading.Thread(target=_serve, daemon=True)
-    th.start()
-    time.sleep(0.2)
-    st.session_state["viewer_server_started"] = True
-    return f"http://{viewer_host}:{VIEWER_PORT}/index.html"
+def _viewer_html_inline(payload: dict, cfg: dict) -> str:
+    html = _viewer_html()
+    inline_bootstrap = (
+        "    const payload = " + json.dumps(payload) + ";\n"
+        "    const cfg = " + json.dumps(cfg) + ";"
+    )
+    html = html.replace(
+        "    const payloadRes = await fetch('./payload.json?ts=' + Date.now());\n"
+        "    const cfgRes = await fetch('./config.json?ts=' + Date.now());\n"
+        "    const payload = await payloadRes.json();\n"
+        "    const cfg = await cfgRes.json();",
+        inline_bootstrap,
+    )
+    return html
 
 
 def _write_viewer_data(
@@ -1382,7 +1375,7 @@ def _write_viewer_data(
     eci_view: bool,
     coverage_focus_names: list[str],
     solar_speed_days_per_sec: float,
-) -> None:
+) -> dict:
     VIEWER_DIR.mkdir(parents=True, exist_ok=True)
     (VIEWER_DIR / "payload.json").write_text(json.dumps(payload), encoding="utf-8")
     solar_earth_texture_url = None
@@ -1413,6 +1406,7 @@ def _write_viewer_data(
         "solarSpeedDaysPerSec": float(solar_speed_days_per_sec),
     }
     (VIEWER_DIR / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    return cfg
 
 
 def main():
@@ -1542,11 +1536,6 @@ def main():
 
         use_world_terrain = st.checkbox("Use world terrain (if available)", value=False)
         height_px = st.slider("Viewer height", 700, 1200, 980)
-        viewer_host = st.text_input(
-            "Viewer host/IP",
-            value=DEFAULT_VIEWER_HOST,
-            help="Host used by the embedded iframe (use server IP, not localhost).",
-        )
         if st.button("Refresh data now"):
             st.cache_data.clear()
             st.rerun()
@@ -1634,8 +1623,7 @@ def main():
         st.dataframe(filtered, use_container_width=True, height=320)
 
     earth_data_url = _earth_texture_data_url()
-    viewer_url = _ensure_viewer_server(viewer_host=viewer_host)
-    _write_viewer_data(
+    cfg = _write_viewer_data(
         payload,
         use_world_terrain=use_world_terrain,
         earth_data_url=earth_data_url,
@@ -1653,7 +1641,7 @@ def main():
         coverage_focus_names=coverage_focus_names,
         solar_speed_days_per_sec=solar_speed_days_per_sec,
     )
-    components.iframe(f"{viewer_url}?ts={time.time_ns()}", height=height_px + 8, scrolling=False)
+    components.html(_viewer_html_inline(payload, cfg), height=height_px + 8, scrolling=False)
 
 
 if __name__ == "__main__":
